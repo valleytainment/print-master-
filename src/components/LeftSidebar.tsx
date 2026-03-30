@@ -9,10 +9,10 @@
  * ============================================================================
  */
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { LayoutConfig, ProductTemplate } from '../types';
-import { PAPER_SIZES, TEMPLATES } from '../lib/layoutEngine';
-import { ChevronDown, Plus, Replace, Trash2, Wand2, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { PAPER_SIZES } from '../lib/layoutEngine';
+import { ChevronDown, Plus, Replace, Trash2, Wand2, RotateCcw, CheckCircle2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
@@ -22,15 +22,76 @@ interface LeftSidebarProps {
   config: LayoutConfig;
   setConfig: React.Dispatch<React.SetStateAction<LayoutConfig>>;
   template: ProductTemplate;
+  allTemplates: ProductTemplate[];
+  setCustomTemplates: React.Dispatch<React.SetStateAction<ProductTemplate[]>>;
 }
 
 /**
  * LeftSidebar Component
  * Renders the configuration panel for the layout engine.
  */
-export default function LeftSidebar({ config, setConfig, template }: LeftSidebarProps) {
+export default function LeftSidebar({ config, setConfig, template, allTemplates, setCustomTemplates }: LeftSidebarProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isCreatingCustom, setIsCreatingCustom] = useState(false);
+  const [customWidth, setCustomWidth] = useState('2');
+  const [customHeight, setCustomHeight] = useState('2');
+  const [customName, setCustomName] = useState('Custom Size');
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please upload an image file');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        setConfig(prev => ({ ...prev, uploadedImage: dataUrl }));
+        toast.success('Design uploaded successfully');
+      };
+      reader.onerror = () => {
+        toast.error('Failed to read file');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setConfig(prev => ({ ...prev, uploadedImage: null }));
+    toast.success('Design removed');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleCreateCustomTemplate = () => {
+    const width = parseFloat(customWidth);
+    const height = parseFloat(customHeight);
+    
+    if (isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
+      toast.error('Please enter valid dimensions');
+      return;
+    }
+
+    const newTemplate: ProductTemplate = {
+      id: `custom-${Date.now()}`,
+      name: customName || `Custom ${width}x${height}`,
+      cutWidth: width,
+      cutHeight: height,
+      safeZone: 0.1,
+      gutter: 0.125,
+    };
+
+    setCustomTemplates(prev => [...prev, newTemplate]);
+    setConfig(prev => ({ ...prev, templateId: newTemplate.id }));
+    setIsCreatingCustom(false);
+    toast.success('Custom template created');
+  };
+
   return (
-    <aside className="w-72 border-r border-gray-800 bg-[#0a0a0a] flex flex-col overflow-y-auto shrink-0">
+    <aside className="w-full md:w-72 border-b md:border-b-0 md:border-r border-gray-800 bg-[#0a0a0a] flex flex-col overflow-y-auto shrink-0">
       
       {/* ----------------------------------------------------------------------
           PRODUCT TEMPLATE SECTION
@@ -46,7 +107,7 @@ export default function LeftSidebar({ config, setConfig, template }: LeftSidebar
             onChange={(e) => setConfig({ ...config, templateId: e.target.value })}
             aria-label="Select Product Template"
           >
-            {TEMPLATES.map((t) => (
+            {allTemplates.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
@@ -76,13 +137,64 @@ export default function LeftSidebar({ config, setConfig, template }: LeftSidebar
           </div>
         </div>
 
-        {/* Custom Size Button (Placeholder) */}
-        <button 
-          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 rounded transition-colors"
-          onClick={() => toast.info('Custom size creation coming soon!')}
-        >
-          <Plus className="w-4 h-4" /> Create Custom Size
-        </button>
+        {/* Custom Size Form */}
+        {isCreatingCustom ? (
+          <div className="mt-4 bg-gray-900 p-3 rounded border border-gray-800">
+            <div className="mb-2">
+              <label className="block text-[10px] text-gray-500 mb-1">Name</label>
+              <input 
+                type="text" 
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
+                placeholder="Custom Size"
+              />
+            </div>
+            <div className="flex gap-2 mb-3">
+              <div className="flex-1">
+                <label className="block text-[10px] text-gray-500 mb-1">Width (in)</label>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  value={customWidth}
+                  onChange={(e) => setCustomWidth(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-[10px] text-gray-500 mb-1">Height (in)</label>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  value={customHeight}
+                  onChange={(e) => setCustomHeight(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-xs rounded transition-colors"
+                onClick={() => setIsCreatingCustom(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition-colors"
+                onClick={handleCreateCustomTemplate}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button 
+            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 rounded transition-colors mt-4"
+            onClick={() => setIsCreatingCustom(true)}
+          >
+            <Plus className="w-4 h-4" /> Create Custom Size
+          </button>
+        )}
       </div>
 
       {/* ----------------------------------------------------------------------
@@ -93,33 +205,51 @@ export default function LeftSidebar({ config, setConfig, template }: LeftSidebar
         <div className="flex gap-4 items-start">
           {/* Image Preview Area */}
           <div className="w-20 h-20 bg-gray-900 border border-gray-700 rounded-lg flex flex-col items-center justify-center relative overflow-hidden group">
-            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-              <button className="text-[10px] text-white flex items-center gap-1 hover:text-blue-400">
-                <Replace className="w-3 h-3" /> Replace
-              </button>
-            </div>
-            {/* Placeholder for uploaded image */}
-            <div className="w-12 h-12 rounded-full border-2 border-dashed border-gray-600 flex items-center justify-center text-gray-500 text-xs font-bold">
-              LOGO
-            </div>
+            {config.uploadedImage ? (
+              <>
+                <img src={config.uploadedImage} alt="Uploaded design" className="w-full h-full object-contain" />
+                <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button 
+                    className="text-[10px] text-white flex items-center gap-1 hover:text-blue-400"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Replace className="w-3 h-3" /> Replace
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="w-12 h-12 rounded-full border-2 border-dashed border-gray-600 flex items-center justify-center text-gray-500 text-xs font-bold">
+                LOGO
+              </div>
+            )}
           </div>
           
           {/* Upload Controls & Info */}
           <div className="flex-1">
+            <input 
+              type="file" 
+              accept="image/*" 
+              className="hidden" 
+              ref={fileInputRef}
+              onChange={handleImageUpload}
+            />
             <div className="flex gap-2 mb-3">
               <button 
                 className="flex-1 flex items-center justify-center gap-1.5 bg-gray-800 hover:bg-gray-700 text-xs py-1.5 rounded border border-gray-700"
-                onClick={() => toast.info('File upload dialog would open here')}
+                onClick={() => fileInputRef.current?.click()}
               >
-                <Replace className="w-3.5 h-3.5" /> Replace
+                {config.uploadedImage ? <Replace className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />} 
+                {config.uploadedImage ? 'Replace' : 'Upload'}
               </button>
-              <button 
-                className="w-8 flex items-center justify-center bg-gray-800 hover:bg-red-900/50 hover:text-red-400 text-gray-400 py-1.5 rounded border border-gray-700 transition-colors" 
-                aria-label="Remove Design"
-                onClick={() => toast.success('Design removed')}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+              {config.uploadedImage && (
+                <button 
+                  className="w-8 flex items-center justify-center bg-gray-800 hover:bg-red-900/50 hover:text-red-400 text-gray-400 py-1.5 rounded border border-gray-700 transition-colors" 
+                  aria-label="Remove Design"
+                  onClick={handleRemoveImage}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
             <ul className="space-y-1.5">
               <li className="flex items-center gap-2 text-[10px] text-green-400">

@@ -8,3 +8,38 @@
  */
 
 @import "tailwindcss";
+
+@media print {
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Only show the print canvas and its children */
+  #print-canvas, #print-canvas * {
+    visibility: visible;
+  }
+
+  /* Position the canvas at the very top left of the printed page */
+  #print-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    margin: 0;
+    padding: 0;
+    box-shadow: none !important;
+    border: none !important;
+    transform: scale(1) !important;
+    transform-origin: top left !important;
+  }
+
+  /* Remove page margins added by the browser */
+  @page {
+    margin: 0;
+  }
+
+  /* Hide scrollbars */
+  ::-webkit-scrollbar {
+    display: none;
+  }
+}

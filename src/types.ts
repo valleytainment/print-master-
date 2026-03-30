@@ -71,6 +71,7 @@ export type LayoutConfig = {
   bleed: boolean;                 // Whether to add bleed area
   pageLabels: boolean;            // Whether to add page/item labels
   centerMarks: boolean;           // Whether to add center alignment marks
+  uploadedImage: string | null;   // DataURL of the uploaded design
 };
 
 /**

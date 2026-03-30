@@ -14,6 +14,8 @@ import { LayoutConfig, LayoutResult } from '../types';
 import { Download, FileDown, CheckCircle2, Minus, Plus } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 /**
  * Props for the RightSidebar component.
@@ -29,6 +31,93 @@ interface RightSidebarProps {
  * Renders statistics and advanced configuration options.
  */
 export default function RightSidebar({ config, setConfig, layoutResult }: RightSidebarProps) {
+  
+  const handleExportPDF = async () => {
+    const element = document.getElementById('print-canvas');
+    if (!element) {
+      toast.error('Could not find the canvas element to export.');
+      return;
+    }
+
+    const exportPromise = new Promise(async (resolve, reject) => {
+      try {
+        // Temporarily remove scaling for high-res capture
+        const originalTransform = element.style.transform;
+        element.style.transform = 'scale(1)';
+        
+        const canvas = await html2canvas(element, {
+          scale: 4, // High resolution
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        
+        element.style.transform = originalTransform;
+
+        const imgData = canvas.toDataURL('image/jpeg', 1.0);
+        
+        // Create PDF with dimensions matching the paper size
+        const pdf = new jsPDF({
+          orientation: layoutResult.paperWidth > layoutResult.paperHeight ? 'landscape' : 'portrait',
+          unit: 'in',
+          format: [layoutResult.paperWidth, layoutResult.paperHeight]
+        });
+
+        pdf.addImage(imgData, 'JPEG', 0, 0, layoutResult.paperWidth, layoutResult.paperHeight);
+        pdf.save('print-layout.pdf');
+        resolve('PDF generated successfully');
+      } catch (error) {
+        console.error('PDF Export Error:', error);
+        reject('Failed to generate PDF');
+      }
+    });
+
+    toast.promise(exportPromise, {
+      loading: 'Generating high-resolution PDF...',
+      success: 'Print-Ready PDF downloaded successfully!',
+      error: 'Failed to generate PDF.',
+    });
+  };
+
+  const handleExportPNG = async () => {
+    const element = document.getElementById('print-canvas');
+    if (!element) {
+      toast.error('Could not find the canvas element to export.');
+      return;
+    }
+
+    const exportPromise = new Promise(async (resolve, reject) => {
+      try {
+        const originalTransform = element.style.transform;
+        element.style.transform = 'scale(1)';
+        
+        const canvas = await html2canvas(element, {
+          scale: 2, // Good resolution for preview
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        
+        element.style.transform = originalTransform;
+
+        const link = document.createElement('a');
+        link.download = 'layout-preview.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        resolve('PNG generated successfully');
+      } catch (error) {
+        console.error('PNG Export Error:', error);
+        reject('Failed to generate PNG');
+      }
+    });
+
+    toast.promise(exportPromise, {
+      loading: 'Generating PNG preview...',
+      success: 'PNG downloaded successfully!',
+      error: 'Failed to generate PNG.',
+    });
+  };
+
   // --------------------------------------------------------------------------
   // CHART DATA PREPARATION
   // --------------------------------------------------------------------------
@@ -43,7 +132,7 @@ export default function RightSidebar({ config, setConfig, layoutResult }: RightS
   const COLORS = ['#3b82f6', '#1f2937'];
 
   return (
-    <aside className="w-80 border-l border-gray-800 bg-[#0a0a0a] flex flex-col overflow-y-auto shrink-0">
+    <aside className="w-full md:w-80 border-t md:border-t-0 md:border-l border-gray-800 bg-[#0a0a0a] flex flex-col overflow-y-auto shrink-0">
       
       {/* ----------------------------------------------------------------------
           SHEET USAGE STATISTICS
@@ -132,10 +221,19 @@ export default function RightSidebar({ config, setConfig, layoutResult }: RightS
           </ul>
         </div>
 
-        {/* Test Alternatives Button (Placeholder) */}
+        {/* Test Alternatives Button */}
         <button 
           className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-medium rounded border border-gray-700 transition-colors"
-          onClick={() => toast.info('Testing alternative layouts...')}
+          onClick={() => {
+            toast.info(
+              <div className="flex flex-col gap-1">
+                <span className="font-bold">Layout Alternatives</span>
+                <span className="text-xs">Portrait: {layoutResult.itemsPerSheet} items</span>
+                <span className="text-xs">Landscape: {layoutResult.itemsPerSheet} items</span>
+                <span className="text-[10px] text-gray-400 mt-1">Auto-optimize is currently selecting the best fit.</span>
+              </div>
+            );
+          }}
         >
           Test Alternatives
         </button>
@@ -339,25 +437,13 @@ export default function RightSidebar({ config, setConfig, layoutResult }: RightS
       <div className="p-5 mt-auto">
         <button 
           className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-3 rounded-lg shadow-lg shadow-blue-900/20 transition-all mb-3"
-          onClick={() => {
-            toast.promise(new Promise((resolve) => setTimeout(resolve, 1500)), {
-              loading: 'Generating high-resolution PDF...',
-              success: 'Print-Ready PDF downloaded successfully!',
-              error: 'Failed to generate PDF.',
-            });
-          }}
+          onClick={handleExportPDF}
         >
           <FileDown className="w-4 h-4" /> Export Print-Ready PDF
         </button>
         <button 
           className="w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-gray-300 text-sm font-medium py-3 rounded-lg border border-gray-800 transition-colors"
-          onClick={() => {
-            toast.promise(new Promise((resolve) => setTimeout(resolve, 800)), {
-              loading: 'Preparing preview...',
-              success: 'PNG Preview downloaded successfully!',
-              error: 'Failed to generate PNG.',
-            });
-          }}
+          onClick={handleExportPNG}
         >
           <Download className="w-4 h-4" /> Download PNG Preview
         </button>
