@@ -1,18 +1,22 @@
 /**
  * ============================================================================
  * FILE: src/lib/layoutEngine.ts
- * DESCRIPTION: Core layout calculation logic. Determines the optimal arrangement
- *              of items on a given paper size, considering margins, gutters,
- *              and rotation options.
- * AUTHOR: AI Studio
+ * DESCRIPTION: Core layout calculation logic for sheet planning.
+ *              This module defines built-in paper/template presets and
+ *              evaluates candidate layout combinations to find the best fit
+ *              for the current configuration.
+ * AUTHOR: Codex
  * SCORE: 100+ (Clarity, Quality, Maintainability)
  * ============================================================================
  */
 
 import { LayoutConfig, LayoutResult, PaperSize, ProductTemplate } from '../types';
 
+const SAFE_MARGIN_INCHES = 0.25;
+const TIGHT_MARGIN_INCHES = 0.12;
+
 /**
- * Predefined list of standard paper sizes.
+ * Built-in paper options used by the left sidebar selector.
  */
 export const PAPER_SIZES: PaperSize[] = [
   { id: 'letter', name: 'Letter (8.5" x 11")', width: 8.5, height: 11 },
@@ -21,7 +25,8 @@ export const PAPER_SIZES: PaperSize[] = [
 ];
 
 /**
- * Predefined list of product templates.
+ * Built-in product templates. Users can extend this set at runtime with
+ * custom templates created from the UI.
  */
 export const TEMPLATES: ProductTemplate[] = [
   {
@@ -51,69 +56,64 @@ export const TEMPLATES: ProductTemplate[] = [
 ];
 
 /**
+ * Resolves the effective print margins for the chosen printer mode.
+ */
+function getMargins(config: LayoutConfig): LayoutResult['margins'] {
+  if (config.printerMode === 'custom') {
+    return config.customMargins;
+  }
+
+  let margin = SAFE_MARGIN_INCHES;
+
+  if (config.printerMode === 'tight') {
+    margin = TIGHT_MARGIN_INCHES;
+  }
+
+  if (config.printerMode === 'borderless') {
+    margin = 0;
+  }
+
+  return { top: margin, right: margin, bottom: margin, left: margin };
+}
+
+/**
  * Calculates the optimal layout for a given template and paper size.
- * It tests different orientations and rotations (if allowed) to find the
- * arrangement that fits the most items with the least waste.
- * 
- * @param template - The selected product template
- * @param paper - The selected paper size
- * @param config - The current layout configuration settings
- * @returns The calculated layout result containing dimensions, margins, and usage stats
+ * The engine tests supported orientation and rotation combinations, then picks
+ * the result that fits the most items. If multiple layouts fit the same number
+ * of items, it prefers the one with better sheet usage.
  */
 export function calculateLayout(
   template: ProductTemplate,
   paper: PaperSize,
   config: LayoutConfig
 ): LayoutResult {
-  // --------------------------------------------------------------------------
-  // MARGIN CALCULATION
-  // --------------------------------------------------------------------------
-  
-  // Determine margins based on the selected printer mode.
-  // 'safe' ensures no clipping, 'tight' minimizes margins, 'borderless' removes them.
-  let margin = 0.25; // Default safe margin
-  if (config.printerMode === 'tight') margin = 0.12;
-  if (config.printerMode === 'borderless') margin = 0;
+  const margins = getMargins(config);
 
-  const margins = { top: margin, right: margin, bottom: margin, left: margin };
-
-  // --------------------------------------------------------------------------
-  // LAYOUT ALGORITHM
-  // --------------------------------------------------------------------------
-  
   /**
-   * Helper function to test a specific layout configuration.
-   * 
-   * @param isLandscape - True if the paper is in landscape orientation
-   * @param isRotated - True if the items are rotated 90 degrees
-   * @returns A LayoutResult object for this specific configuration
+   * Evaluates a single orientation/rotation candidate.
    */
   const tryLayout = (isLandscape: boolean, isRotated: boolean): LayoutResult => {
-    // Determine effective paper dimensions based on orientation
     const pWidth = isLandscape ? paper.height : paper.width;
     const pHeight = isLandscape ? paper.width : paper.height;
 
-    // Calculate available printable area after subtracting margins
     const availWidth = pWidth - margins.left - margins.right;
     const availHeight = pHeight - margins.top - margins.bottom;
 
-    // Determine effective item dimensions based on rotation
     const iWidth = isRotated ? template.cutHeight : template.cutWidth;
     const iHeight = isRotated ? template.cutWidth : template.cutHeight;
-
     const gutter = config.gutter;
 
-    // Calculate how many columns and rows can fit in the available area.
-    // Formula: cols * iWidth + (cols - 1) * gutter <= availWidth
-    // Simplified: cols * (iWidth + gutter) <= availWidth + gutter
     let cols = Math.floor((availWidth + gutter) / (iWidth + gutter));
     let rows = Math.floor((availHeight + gutter) / (iHeight + gutter));
 
-    // Ensure we don't have negative columns or rows
-    if (cols < 0) cols = 0;
-    if (rows < 0) rows = 0;
+    if (cols < 0) {
+      cols = 0;
+    }
 
-    // Calculate usage statistics
+    if (rows < 0) {
+      rows = 0;
+    }
+
     const itemsPerSheet = cols * rows;
     const usedWidth = cols > 0 ? cols * iWidth + (cols - 1) * gutter : 0;
     const usedHeight = rows > 0 ? rows * iHeight + (rows - 1) * gutter : 0;
@@ -138,33 +138,24 @@ export function calculateLayout(
       paperHeight: pHeight,
     };
   };
-
-  // --------------------------------------------------------------------------
-  // OPTIMIZATION LOOP
-  // --------------------------------------------------------------------------
   
   let bestResult: LayoutResult | null = null;
 
-  // Determine which orientations to test based on autoOptimize setting
   const orientations = config.autoOptimize
-    ? [false, true] // Test both portrait and landscape
-    : [config.orientation === 'landscape']; // Test only selected orientation
+    ? [false, true]
+    : [config.orientation === 'landscape'];
 
-  // Determine which rotations to test based on allowRotation setting
   const rotations = config.allowRotation 
-    ? [false, true] // Test both 0 and 90 degree rotations
-    : [false]; // Test only 0 degree rotation
+    ? [false, true]
+    : [false];
 
-  // Iterate through all combinations to find the best layout
   for (const isLandscape of orientations) {
     for (const isRotated of rotations) {
       const result = tryLayout(isLandscape, isRotated);
       
-      // Update bestResult if this configuration fits more items
       if (!bestResult || result.itemsPerSheet > bestResult.itemsPerSheet) {
         bestResult = result;
       } else if (result.itemsPerSheet === bestResult.itemsPerSheet) {
-        // Tie breaker: if items are equal, prefer the one with better sheet usage
         if (result.sheetUsagePercent > bestResult.sheetUsagePercent) {
           bestResult = result;
         }
@@ -172,6 +163,5 @@ export function calculateLayout(
     }
   }
 
-  // Return the best result found (guaranteed to be non-null at this point)
   return bestResult!;
 }

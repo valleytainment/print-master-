@@ -3,19 +3,20 @@
  * FILE: src/components/RightSidebar.tsx
  * DESCRIPTION: The right sidebar component. Displays layout statistics,
  *              optimization details, advanced settings (gutter, crop marks),
- *              and export actions.
- * AUTHOR: AI Studio
+ *              and export actions. Heavy chart and export dependencies are
+ *              intentionally loaded on demand so the main layout shell stays
+ *              responsive.
+ * AUTHOR: Codex
  * SCORE: 100+ (Clarity, Quality, Maintainability)
  * ============================================================================
  */
 
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { LayoutConfig, LayoutResult } from '../types';
 import { Download, FileDown, CheckCircle2, Minus, Plus } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+
+const SheetUsageChart = lazy(() => import('./SheetUsageChart'));
 
 /**
  * Props for the RightSidebar component.
@@ -31,105 +32,25 @@ interface RightSidebarProps {
  * Renders statistics and advanced configuration options.
  */
 export default function RightSidebar({ config, setConfig, layoutResult }: RightSidebarProps) {
-  
   const handleExportPDF = async () => {
-    const element = document.getElementById('print-canvas');
-    if (!element) {
-      toast.error('Could not find the canvas element to export.');
-      return;
-    }
-
-    const exportPromise = new Promise(async (resolve, reject) => {
-      try {
-        // Temporarily remove scaling for high-res capture
-        const originalTransform = element.style.transform;
-        element.style.transform = 'scale(1)';
-        
-        const canvas = await html2canvas(element, {
-          scale: 4, // High resolution
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
-        
-        element.style.transform = originalTransform;
-
-        const imgData = canvas.toDataURL('image/jpeg', 1.0);
-        
-        // Create PDF with dimensions matching the paper size
-        const pdf = new jsPDF({
-          orientation: layoutResult.paperWidth > layoutResult.paperHeight ? 'landscape' : 'portrait',
-          unit: 'in',
-          format: [layoutResult.paperWidth, layoutResult.paperHeight]
-        });
-
-        pdf.addImage(imgData, 'JPEG', 0, 0, layoutResult.paperWidth, layoutResult.paperHeight);
-        pdf.save('print-layout.pdf');
-        resolve('PDF generated successfully');
-      } catch (error) {
-        console.error('PDF Export Error:', error);
-        reject('Failed to generate PDF');
-      }
-    });
+    const exportPromise = import('../lib/exportUtils').then(({ exportLayoutAsPdf }) => exportLayoutAsPdf(layoutResult));
 
     toast.promise(exportPromise, {
-      loading: 'Generating high-resolution PDF...',
-      success: 'Print-Ready PDF downloaded successfully!',
-      error: 'Failed to generate PDF.',
+      loading: 'Generating PDF snapshot...',
+      success: 'PDF snapshot downloaded successfully.',
+      error: 'Failed to generate the PDF snapshot.',
     });
   };
 
   const handleExportPNG = async () => {
-    const element = document.getElementById('print-canvas');
-    if (!element) {
-      toast.error('Could not find the canvas element to export.');
-      return;
-    }
-
-    const exportPromise = new Promise(async (resolve, reject) => {
-      try {
-        const originalTransform = element.style.transform;
-        element.style.transform = 'scale(1)';
-        
-        const canvas = await html2canvas(element, {
-          scale: 2, // Good resolution for preview
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
-        
-        element.style.transform = originalTransform;
-
-        const link = document.createElement('a');
-        link.download = 'layout-preview.png';
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-        resolve('PNG generated successfully');
-      } catch (error) {
-        console.error('PNG Export Error:', error);
-        reject('Failed to generate PNG');
-      }
-    });
+    const exportPromise = import('../lib/exportUtils').then(({ exportLayoutAsPng }) => exportLayoutAsPng());
 
     toast.promise(exportPromise, {
       loading: 'Generating PNG preview...',
-      success: 'PNG downloaded successfully!',
-      error: 'Failed to generate PNG.',
+      success: 'PNG preview downloaded successfully.',
+      error: 'Failed to generate the PNG preview.',
     });
   };
-
-  // --------------------------------------------------------------------------
-  // CHART DATA PREPARATION
-  // --------------------------------------------------------------------------
-  
-  // Data for the sheet usage pie chart
-  const chartData = [
-    { name: 'Used', value: layoutResult.sheetUsagePercent },
-    { name: 'Waste', value: layoutResult.wastePercent },
-  ];
-  
-  // Colors for the pie chart slices (Tailwind blue-500 and gray-800)
-  const COLORS = ['#3b82f6', '#1f2937'];
 
   return (
     <aside className="w-full md:w-80 border-t md:border-t-0 md:border-l border-gray-800 bg-[#0a0a0a] flex flex-col overflow-y-auto shrink-0">
@@ -142,25 +63,18 @@ export default function RightSidebar({ config, setConfig, layoutResult }: RightS
         
         {/* Usage Pie Chart */}
         <div className="relative h-40 flex items-center justify-center mb-4">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                innerRadius={55}
-                outerRadius={70}
-                startAngle={90}
-                endAngle={-270}
-                dataKey="value"
-                stroke="none"
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
+          <Suspense
+            fallback={
+              <div className="flex h-full w-full items-center justify-center rounded-full border border-gray-800 bg-gray-900/40">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500/20 border-t-blue-400" />
+              </div>
+            }
+          >
+            <SheetUsageChart
+              usedPercent={layoutResult.sheetUsagePercent}
+              wastePercent={layoutResult.wastePercent}
+            />
+          </Suspense>
           
           {/* Center Text for Pie Chart */}
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -183,7 +97,9 @@ export default function RightSidebar({ config, setConfig, layoutResult }: RightS
           </div>
           <div className="flex justify-between items-center">
             <span className="text-gray-400">Margins</span>
-            <span className="font-medium text-gray-200">{layoutResult.margins.top} in all sides</span>
+            <span className="font-medium text-gray-200">
+              T {layoutResult.margins.top}" • R {layoutResult.margins.right}" • B {layoutResult.margins.bottom}" • L {layoutResult.margins.left}"
+            </span>
           </div>
         </div>
       </div>
@@ -439,7 +355,7 @@ export default function RightSidebar({ config, setConfig, layoutResult }: RightS
           className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-3 rounded-lg shadow-lg shadow-blue-900/20 transition-all mb-3"
           onClick={handleExportPDF}
         >
-          <FileDown className="w-4 h-4" /> Export Print-Ready PDF
+          <FileDown className="w-4 h-4" /> Export PDF Snapshot
         </button>
         <button 
           className="w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-gray-300 text-sm font-medium py-3 rounded-lg border border-gray-800 transition-colors"

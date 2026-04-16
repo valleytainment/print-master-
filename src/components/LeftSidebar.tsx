@@ -13,6 +13,7 @@ import React, { useRef, useState } from 'react';
 import { LayoutConfig, ProductTemplate } from '../types';
 import { PAPER_SIZES } from '../lib/layoutEngine';
 import { ChevronDown, Plus, Replace, Trash2, Wand2, RotateCcw, CheckCircle2, Upload } from 'lucide-react';
+import { DEFAULT_CUSTOM_MARGINS } from '../lib/layoutConfig';
 import { toast } from 'sonner';
 
 /**
@@ -88,6 +89,18 @@ export default function LeftSidebar({ config, setConfig, template, allTemplates,
     setConfig(prev => ({ ...prev, templateId: newTemplate.id }));
     setIsCreatingCustom(false);
     toast.success('Custom template created');
+  };
+
+  const updateCustomMargin = (edge: 'top' | 'right' | 'bottom' | 'left', value: string) => {
+    const parsed = Number.parseFloat(value);
+    setConfig((prev) => ({
+      ...prev,
+      printerMode: 'custom',
+      customMargins: {
+        ...prev.customMargins,
+        [edge]: Number.isFinite(parsed) ? Math.min(2, Math.max(0, parsed)) : 0,
+      },
+    }));
   };
 
   return (
@@ -324,7 +337,7 @@ export default function LeftSidebar({ config, setConfig, template, allTemplates,
         {/* Printer Mode (Margins) Selector */}
         <div className="mb-6">
           <label className="block text-xs text-gray-400 mb-1.5">Printer Mode</label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <button
               className={`py-2 px-1 rounded border text-center transition-colors ${
                 config.printerMode === 'safe'
@@ -362,8 +375,54 @@ export default function LeftSidebar({ config, setConfig, template, allTemplates,
               <div className="text-[9px] leading-tight text-orange-500/80">MAX</div>
               <div className="text-[8px] leading-tight mt-0.5 opacity-70">Full bleed + Slight crop risk</div>
             </button>
+            <button
+              className={`py-2 px-1 rounded border text-center transition-colors ${
+                config.printerMode === 'custom'
+                  ? 'bg-gray-800 border-gray-600 text-white'
+                  : 'bg-gray-900 border-gray-800 text-gray-500 hover:bg-gray-800'
+              }`}
+              onClick={() => setConfig({ ...config, printerMode: 'custom' })}
+              aria-pressed={config.printerMode === 'custom'}
+            >
+              <div className="text-xs font-medium mb-0.5">Custom</div>
+              <div className="text-[9px] leading-tight">Calibrated printer</div>
+            </button>
           </div>
         </div>
+
+        {config.printerMode === 'custom' && (
+          <div className="mb-6 rounded-lg border border-gray-800 bg-gray-900/80 p-3">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-medium text-gray-200">Custom Printable Margins</div>
+                <div className="text-[10px] text-gray-500">Set the non-printable edge for your actual printer.</div>
+              </div>
+              <button
+                className="text-[10px] font-medium text-gray-400 transition-colors hover:text-white"
+                onClick={() => setConfig((prev) => ({ ...prev, customMargins: DEFAULT_CUSTOM_MARGINS }))}
+              >
+                Reset
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {(['top', 'right', 'bottom', 'left'] as const).map((edge) => (
+                <label key={edge} className="block">
+                  <span className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">{edge}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.01"
+                    value={config.customMargins[edge]}
+                    onChange={(e) => updateCustomMargin(edge, e.target.value)}
+                    className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Advanced Toggles */}
         <div className="space-y-4 mb-6">

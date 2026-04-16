@@ -14,6 +14,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { LayoutConfig, LayoutResult, ProductTemplate, PaperSize } from '../types';
 import { CheckCircle2, X, ZoomIn, ZoomOut, Maximize, FileText, Minus, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { getArtworkPlacement } from '../lib/layoutConfig';
 
 /**
  * Props for the MainCanvas component.
@@ -24,13 +25,14 @@ interface MainCanvasProps {
   template: ProductTemplate;
   paper: PaperSize;
   isExportMode?: boolean;
+  canvasId?: string;
 }
 
 /**
  * MainCanvas Component
  * Renders the interactive preview of the print layout.
  */
-export default function MainCanvas({ config, layoutResult, template, paper, isExportMode }: MainCanvasProps) {
+export default function MainCanvas({ config, layoutResult, template, paper, isExportMode, canvasId }: MainCanvasProps) {
   // --------------------------------------------------------------------------
   // STATE & REFS
   // --------------------------------------------------------------------------
@@ -84,9 +86,21 @@ export default function MainCanvas({ config, layoutResult, template, paper, isEx
   const baseDpi = 96;
   const scaledWidth = layoutResult.paperWidth * baseDpi * scale;
   const scaledHeight = layoutResult.paperHeight * baseDpi * scale;
+  const unitMultiplier = isExportMode ? 1 : baseDpi * scale;
+  const unit = isExportMode ? 'in' : 'px';
+  const toCanvasUnit = (value: number) => `${value * unitMultiplier}${unit}`;
+  const artworkPlacement = getArtworkPlacement(config, template.id);
+  const centerMarkLength = isExportMode ? '0.08in' : '8px';
+  const centerMarkColor = isExportMode ? '#111111' : '#9ca3af';
+  const cropMarkLength = isExportMode ? '0.12in' : '12px';
+  const cropMarkOffset = isExportMode ? '0.12in' : '12px';
+  const cropMarkThickness = isExportMode ? '0.012in' : '1px';
+  const cropMarkColor = isExportMode ? '#111111' : '#9ca3af';
 
   return (
-    <main className={`flex-1 flex flex-col bg-[#111111] relative overflow-hidden ${isExportMode ? 'h-0 w-0' : ''}`}>
+    <main
+      className={`relative flex flex-col ${isExportMode ? 'flex-none overflow-visible bg-white' : 'flex-1 overflow-hidden bg-[#111111]'}`}
+    >
       
       {/* ----------------------------------------------------------------------
           TOP HEADER (Status & Quick Stats)
@@ -154,7 +168,10 @@ export default function MainCanvas({ config, layoutResult, template, paper, isEx
       {/* ----------------------------------------------------------------------
           CANVAS AREA (The Paper & Layout)
           ---------------------------------------------------------------------- */}
-      <div className="flex-1 relative flex items-center justify-center overflow-auto" ref={containerRef}>
+      <div
+        className={`relative flex items-center justify-center ${isExportMode ? 'overflow-visible' : 'flex-1 overflow-auto'}`}
+        ref={containerRef}
+      >
         
         {/* Rulers (simplified visual representation) */}
         {!isExportMode && (
@@ -178,11 +195,11 @@ export default function MainCanvas({ config, layoutResult, template, paper, isEx
 
         {/* The Paper Container */}
         <div 
-          id="print-canvas"
+          id={canvasId}
           className="bg-white shadow-2xl relative"
           style={{ 
-            width: scaledWidth, 
-            height: scaledHeight,
+            width: isExportMode ? `${layoutResult.paperWidth}in` : scaledWidth,
+            height: isExportMode ? `${layoutResult.paperHeight}in` : scaledHeight,
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
           }}
         >
@@ -190,10 +207,10 @@ export default function MainCanvas({ config, layoutResult, template, paper, isEx
           <div 
             className="absolute border border-dashed border-gray-300 pointer-events-none"
             style={{
-              top: layoutResult.margins.top * baseDpi * scale,
-              right: layoutResult.margins.right * baseDpi * scale,
-              bottom: layoutResult.margins.bottom * baseDpi * scale,
-              left: layoutResult.margins.left * baseDpi * scale,
+              top: toCanvasUnit(layoutResult.margins.top),
+              right: toCanvasUnit(layoutResult.margins.right),
+              bottom: toCanvasUnit(layoutResult.margins.bottom),
+              left: toCanvasUnit(layoutResult.margins.left),
             }}
           />
 
@@ -202,10 +219,10 @@ export default function MainCanvas({ config, layoutResult, template, paper, isEx
             <div 
               className="absolute"
               style={{
-                top: layoutResult.margins.top * baseDpi * scale,
-                left: layoutResult.margins.left * baseDpi * scale,
-                width: layoutResult.usedArea.width * baseDpi * scale,
-                height: layoutResult.usedArea.height * baseDpi * scale,
+                top: toCanvasUnit(layoutResult.margins.top),
+                left: toCanvasUnit(layoutResult.margins.left),
+                width: toCanvasUnit(layoutResult.usedArea.width),
+                height: toCanvasUnit(layoutResult.usedArea.height),
               }}
             >
               {Array.from({ length: layoutResult.itemsPerSheet }).map((_, i) => {
@@ -216,12 +233,12 @@ export default function MainCanvas({ config, layoutResult, template, paper, isEx
                 return (
                 <div 
                   key={i}
-                  className="absolute bg-gray-50 flex items-center justify-center"
+                  className="absolute flex items-center justify-center bg-white"
                   style={{
-                    width: layoutResult.itemWidth * baseDpi * scale,
-                    height: layoutResult.itemHeight * baseDpi * scale,
-                    left: col * (layoutResult.itemWidth + config.gutter) * baseDpi * scale,
-                    top: row * (layoutResult.itemHeight + config.gutter) * baseDpi * scale,
+                    width: toCanvasUnit(layoutResult.itemWidth),
+                    height: toCanvasUnit(layoutResult.itemHeight),
+                    left: toCanvasUnit(col * (layoutResult.itemWidth + config.gutter)),
+                    top: toCanvasUnit(row * (layoutResult.itemHeight + config.gutter)),
                   }}
                 >
                   {/* Bleed Indicator */}
@@ -229,32 +246,44 @@ export default function MainCanvas({ config, layoutResult, template, paper, isEx
                     <div 
                       className="absolute border border-dashed border-red-500/50 pointer-events-none"
                       style={{
-                        top: -0.02 * baseDpi * scale,
-                        right: -0.02 * baseDpi * scale,
-                        bottom: -0.02 * baseDpi * scale,
-                        left: -0.02 * baseDpi * scale,
+                        top: toCanvasUnit(-0.02),
+                        right: toCanvasUnit(-0.02),
+                        bottom: toCanvasUnit(-0.02),
+                        left: toCanvasUnit(-0.02),
                       }}
                     />
                   )}
 
-                  {/* Safe Zone Indicator */}
-                  <div 
-                    className="absolute border border-green-500/30 rounded-sm pointer-events-none"
-                    style={{
-                      top: template.safeZone * baseDpi * scale,
-                      right: template.safeZone * baseDpi * scale,
-                      bottom: template.safeZone * baseDpi * scale,
-                      left: template.safeZone * baseDpi * scale,
-                    }}
-                  />
+                  {/* Safe zone remains preview-only so printed sheets stay clean for cutting. */}
+                  {!isExportMode && (
+                    <div 
+                      className="absolute border border-green-500/30 rounded-sm pointer-events-none"
+                      style={{
+                        top: toCanvasUnit(template.safeZone),
+                        right: toCanvasUnit(template.safeZone),
+                        bottom: toCanvasUnit(template.safeZone),
+                        left: toCanvasUnit(template.safeZone),
+                      }}
+                    />
+                  )}
                   
                   {/* Cut Line Indicator */}
                   <div className="absolute inset-0 border border-blue-500/50 pointer-events-none" />
 
                   {/* Content Placeholder (Simulated Design) */}
-                  <div className="flex flex-col items-center justify-center opacity-40 w-full h-full overflow-hidden relative">
+                  <div className="flex flex-col items-center justify-center w-full h-full overflow-hidden relative">
                     {config.uploadedImage ? (
-                      <img src={config.uploadedImage} alt="Design" className="w-full h-full object-cover" />
+                      <img
+                        src={config.uploadedImage}
+                        alt="Design"
+                        className="h-full w-full"
+                        style={{
+                          objectFit: artworkPlacement.fitMode,
+                          objectPosition: 'center',
+                          transform: `translate(${artworkPlacement.offsetX}%, ${artworkPlacement.offsetY}%) scale(${artworkPlacement.scale}) rotate(${artworkPlacement.rotation}deg)`,
+                          transformOrigin: 'center',
+                        }}
+                      />
                     ) : (
                       <>
                         <div className="w-8 h-8 rounded-full border-2 border-gray-800 flex items-center justify-center mb-1">
@@ -266,8 +295,8 @@ export default function MainCanvas({ config, layoutResult, template, paper, isEx
                     )}
                   </div>
 
-                  {/* Page Labels */}
-                  {config.pageLabels && (
+                  {/* Page labels are preview-only so printed sheets stay clean unless marks are functional. */}
+                  {config.pageLabels && !isExportMode && (
                     <div className="absolute top-1 left-1 bg-black/50 text-white text-[8px] font-bold px-1 rounded pointer-events-none">
                       {i + 1}
                     </div>
@@ -276,30 +305,66 @@ export default function MainCanvas({ config, layoutResult, template, paper, isEx
                   {/* Center Marks */}
                   {config.centerMarks && (
                     <>
-                      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-2 border-l border-gray-400" />
-                      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-2 border-l border-gray-400" />
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-0 border-t border-gray-400" />
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-0 border-t border-gray-400" />
+                      <div
+                        className="absolute top-0 left-1/2 -translate-x-1/2"
+                        style={{ width: 0, height: centerMarkLength, borderLeft: `${cropMarkThickness} solid ${centerMarkColor}` }}
+                      />
+                      <div
+                        className="absolute bottom-0 left-1/2 -translate-x-1/2"
+                        style={{ width: 0, height: centerMarkLength, borderLeft: `${cropMarkThickness} solid ${centerMarkColor}` }}
+                      />
+                      <div
+                        className="absolute left-0 top-1/2 -translate-y-1/2"
+                        style={{ width: centerMarkLength, height: 0, borderTop: `${cropMarkThickness} solid ${centerMarkColor}` }}
+                      />
+                      <div
+                        className="absolute right-0 top-1/2 -translate-y-1/2"
+                        style={{ width: centerMarkLength, height: 0, borderTop: `${cropMarkThickness} solid ${centerMarkColor}` }}
+                      />
                     </>
                   )}
 
                   {/* Crop Marks (Standard Style) */}
                   {config.cropMarks && config.cropMarksStyle === 'standard' && (
                     <>
-                      <div className="absolute -top-3 -left-3 w-3 h-3 border-t border-l border-gray-400" />
-                      <div className="absolute -top-3 -right-3 w-3 h-3 border-t border-r border-gray-400" />
-                      <div className="absolute -bottom-3 -left-3 w-3 h-3 border-b border-l border-gray-400" />
-                      <div className="absolute -bottom-3 -right-3 w-3 h-3 border-b border-r border-gray-400" />
+                      <div
+                        className="absolute"
+                        style={{ top: `-${cropMarkOffset}`, left: `-${cropMarkOffset}`, width: cropMarkLength, height: cropMarkLength, borderTop: `${cropMarkThickness} solid ${cropMarkColor}`, borderLeft: `${cropMarkThickness} solid ${cropMarkColor}` }}
+                      />
+                      <div
+                        className="absolute"
+                        style={{ top: `-${cropMarkOffset}`, right: `-${cropMarkOffset}`, width: cropMarkLength, height: cropMarkLength, borderTop: `${cropMarkThickness} solid ${cropMarkColor}`, borderRight: `${cropMarkThickness} solid ${cropMarkColor}` }}
+                      />
+                      <div
+                        className="absolute"
+                        style={{ bottom: `-${cropMarkOffset}`, left: `-${cropMarkOffset}`, width: cropMarkLength, height: cropMarkLength, borderBottom: `${cropMarkThickness} solid ${cropMarkColor}`, borderLeft: `${cropMarkThickness} solid ${cropMarkColor}` }}
+                      />
+                      <div
+                        className="absolute"
+                        style={{ bottom: `-${cropMarkOffset}`, right: `-${cropMarkOffset}`, width: cropMarkLength, height: cropMarkLength, borderBottom: `${cropMarkThickness} solid ${cropMarkColor}`, borderRight: `${cropMarkThickness} solid ${cropMarkColor}` }}
+                      />
                     </>
                   )}
                   
                   {/* Crop Marks (Corners Style) */}
                   {config.cropMarks && config.cropMarksStyle === 'corners' && (
                     <>
-                      <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-gray-400" />
-                      <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-gray-400" />
-                      <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-gray-400" />
-                      <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-gray-400" />
+                      <div
+                        className="absolute top-0 left-0"
+                        style={{ width: cropMarkLength, height: cropMarkLength, borderTop: `${cropMarkThickness} solid ${cropMarkColor}`, borderLeft: `${cropMarkThickness} solid ${cropMarkColor}` }}
+                      />
+                      <div
+                        className="absolute top-0 right-0"
+                        style={{ width: cropMarkLength, height: cropMarkLength, borderTop: `${cropMarkThickness} solid ${cropMarkColor}`, borderRight: `${cropMarkThickness} solid ${cropMarkColor}` }}
+                      />
+                      <div
+                        className="absolute bottom-0 left-0"
+                        style={{ width: cropMarkLength, height: cropMarkLength, borderBottom: `${cropMarkThickness} solid ${cropMarkColor}`, borderLeft: `${cropMarkThickness} solid ${cropMarkColor}` }}
+                      />
+                      <div
+                        className="absolute bottom-0 right-0"
+                        style={{ width: cropMarkLength, height: cropMarkLength, borderBottom: `${cropMarkThickness} solid ${cropMarkColor}`, borderRight: `${cropMarkThickness} solid ${cropMarkColor}` }}
+                      />
                     </>
                   )}
                 </div>

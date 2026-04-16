@@ -1,27 +1,52 @@
 /**
  * ============================================================================
  * FILE: src/App.tsx
- * DESCRIPTION: Main Application Component. Manages the global state for layout
- *              configuration and orchestrates the rendering of the TopBar,
- *              LeftSidebar, MainCanvas, and RightSidebar.
- * AUTHOR: AI Studio
+ * DESCRIPTION: Main Application Component. Manages the global workspace state,
+ *              coordinates autosave, and orchestrates tab-level rendering.
+ *              Heavy non-layout tabs are lazy-loaded to reduce the size of the
+ *              initial renderer bundle while preserving a clear component tree.
+ * AUTHOR: Codex
  * SCORE: 100+ (Clarity, Quality, Maintainability)
  * ============================================================================
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useCallback, useEffect } from 'react';
 import { LayoutConfig, ProductTemplate, PaperSize } from './types';
 import { PAPER_SIZES, TEMPLATES, calculateLayout } from './lib/layoutEngine';
+import { DEFAULT_LAYOUT_CONFIG, normalizeLayoutConfig } from './lib/layoutConfig';
 import TopBar from './components/TopBar';
 import LeftSidebar from './components/LeftSidebar';
 import MainCanvas from './components/MainCanvas';
 import RightSidebar from './components/RightSidebar';
-import ProjectView from './components/ProjectView';
-import TemplateView from './components/TemplateView';
-import DesignView from './components/DesignView';
-import PreviewView from './components/PreviewView';
-import ExportView from './components/ExportView';
 import { Toaster, toast } from 'sonner';
+import { loadWorkspaceState, saveWorkspaceState } from './lib/workspaceStorage';
+
+const ProjectView = lazy(() => import('./components/ProjectView'));
+const TemplateView = lazy(() => import('./components/TemplateView'));
+const DesignView = lazy(() => import('./components/DesignView'));
+const PreviewView = lazy(() => import('./components/PreviewView'));
+const ExportView = lazy(() => import('./components/ExportView'));
+
+type AppTab = 'Project' | 'Template' | 'Design' | 'Layout' | 'Preview' | 'Export';
+
+/**
+ * Provides a consistent loading surface for lazy-loaded tabs. Keeping the
+ * fallback local to this file makes the lazy loading behavior easy to reason
+ * about for future maintainers.
+ */
+function TabLoadingState() {
+  return (
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="w-full max-w-xl rounded-xl border border-gray-800 bg-gray-900/80 px-6 py-10 text-center shadow-2xl">
+        <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-blue-500/20 border-t-blue-400" />
+        <h2 className="text-lg font-semibold text-white">Loading Workspace Tool</h2>
+        <p className="mt-2 text-sm text-gray-400">
+          This tab is lazy-loaded to keep the initial desktop bundle lean and responsive.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Custom hook for managing state history (undo/redo)
@@ -50,7 +75,12 @@ function useHistory<T>(initialState: T) {
     setCurrentIndex((prev) => Math.min(prev + 1, history.length - 1));
   }, [history.length]);
 
-  return [history[currentIndex], setState, undo, redo, currentIndex > 0, currentIndex < history.length - 1] as const;
+  const resetState = useCallback((newState: T) => {
+    setHistory([newState]);
+    setCurrentIndex(0);
+  }, []);
+
+  return [history[currentIndex], setState, undo, redo, resetState, currentIndex > 0, currentIndex < history.length - 1] as const;
 }
 
 /**
@@ -63,25 +93,13 @@ export default function App() {
   // --------------------------------------------------------------------------
   
   // Initialize the layout configuration with default values.
-  const [config, setConfig, undo, redo, canUndo, canRedo] = useHistory<LayoutConfig>({
-    templateId: TEMPLATES[0].id,
-    paperSizeId: PAPER_SIZES[0].id,
-    orientation: 'portrait',
-    printerMode: 'safe',
-    autoOptimize: true,
-    allowRotation: true,
-    cropMarks: true,
-    gutter: 0.10,
-    cropMarksStyle: 'standard',
-    bleed: false,
-    pageLabels: false,
-    centerMarks: false,
-    uploadedImage: null,
-  });
+  const [config, setConfig, undo, redo, resetConfig, canUndo, canRedo] = useHistory<LayoutConfig>(DEFAULT_LAYOUT_CONFIG);
 
   const [customTemplates, setCustomTemplates] = useState<ProductTemplate[]>([]);
-  const [activeTab, setActiveTab] = useState('Layout');
+  const [activeTab, setActiveTab] = useState<AppTab>('Layout');
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [autosaveStatus, setAutosaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [isWorkspaceReady, setIsWorkspaceReady] = useState(false);
 
   // --------------------------------------------------------------------------
   // DERIVED DATA
@@ -108,6 +126,88 @@ export default function App() {
     [template, paper, config]
   );
 
+  useEffect(() => {
+    let isCancelled = false;
+
+    const hydrateWorkspace = async () => {
+      try {
+        const workspace = await loadWorkspaceState();
+        if (isCancelled) {
+          return;
+        }
+
+        if (workspace) {
+          resetConfig(normalizeLayoutConfig(workspace.config));
+          setCustomTemplates(workspace.customTemplates ?? []);
+          setIsDarkMode(workspace.isDarkMode ?? true);
+        }
+
+        setAutosaveStatus('saved');
+      } catch (error) {
+        console.error('Failed to load workspace state', error);
+        if (!isCancelled) {
+          setAutosaveStatus('error');
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsWorkspaceReady(true);
+        }
+      }
+    };
+
+    hydrateWorkspace();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [resetConfig]);
+
+  useEffect(() => {
+    if (!isWorkspaceReady) {
+      return;
+    }
+
+    let isCancelled = false;
+    setAutosaveStatus('saving');
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        await saveWorkspaceState({
+          config,
+          customTemplates,
+          isDarkMode,
+        });
+
+        if (!isCancelled) {
+          setAutosaveStatus('saved');
+        }
+      } catch (error) {
+        console.error('Failed to save workspace state', error);
+        if (!isCancelled) {
+          setAutosaveStatus('error');
+        }
+      }
+    }, 300);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [config, customTemplates, isDarkMode, isWorkspaceReady]);
+
+  useEffect(() => {
+    const styleId = 'print-page-size-style';
+    let styleElement = document.getElementById(styleId) as HTMLStyleElement | null;
+
+    if (!styleElement) {
+      styleElement = document.createElement('style');
+      styleElement.id = styleId;
+      document.head.appendChild(styleElement);
+    }
+
+    styleElement.textContent = `@page { size: ${layoutResult.paperWidth}in ${layoutResult.paperHeight}in; margin: 0; }`;
+  }, [layoutResult.paperHeight, layoutResult.paperWidth]);
+
   // --------------------------------------------------------------------------
   // KEYBOARD SHORTCUTS
   // --------------------------------------------------------------------------
@@ -127,7 +227,8 @@ export default function App() {
       // Print: Ctrl+P or Cmd+P
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault();
-        window.print();
+        setActiveTab('Preview');
+        toast.info('Opened Print Preview. Review the sheet, then print from there.');
       }
       // Save: Ctrl+S or Cmd+S
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -144,6 +245,64 @@ export default function App() {
   // --------------------------------------------------------------------------
   // RENDER
   // --------------------------------------------------------------------------
+
+  const renderTabContent = () => {
+    if (activeTab === 'Layout') {
+      return (
+        <>
+          {/* Left Sidebar: Controls for template, paper, and layout settings */}
+          <LeftSidebar
+            config={config}
+            setConfig={setConfig}
+            template={template}
+            allTemplates={allTemplates}
+            setCustomTemplates={setCustomTemplates}
+          />
+
+          {/* Main Canvas: Visual representation of the calculated layout */}
+          <div className="flex-1 min-h-[500px] md:min-h-0 flex flex-col">
+            <MainCanvas config={config} layoutResult={layoutResult} template={template} paper={paper} />
+          </div>
+
+          {/* Right Sidebar: Statistics, optimization details, and export actions */}
+          <RightSidebar config={config} setConfig={setConfig} layoutResult={layoutResult} />
+        </>
+      );
+    }
+
+    return (
+      <Suspense fallback={<TabLoadingState />}>
+        {activeTab === 'Project' ? (
+          <ProjectView
+            config={config}
+            setConfig={setConfig}
+            customTemplates={customTemplates}
+            setCustomTemplates={setCustomTemplates}
+          />
+        ) : activeTab === 'Template' ? (
+          <TemplateView
+            customTemplates={customTemplates}
+            setCustomTemplates={setCustomTemplates}
+            config={config}
+            setConfig={setConfig}
+          />
+        ) : activeTab === 'Design' ? (
+          <DesignView config={config} setConfig={setConfig} template={template} />
+        ) : activeTab === 'Preview' ? (
+          <PreviewView config={config} layoutResult={layoutResult} template={template} paper={paper} />
+        ) : activeTab === 'Export' ? (
+          <ExportView
+            config={config}
+            setConfig={setConfig}
+            layoutResult={layoutResult}
+            template={template}
+            paper={paper}
+            openPrintPreview={() => setActiveTab('Preview')}
+          />
+        ) : null}
+      </Suspense>
+    );
+  };
   
   return (
     <div className={`min-h-screen font-sans flex flex-col ${isDarkMode ? 'bg-gray-950 text-gray-100 dark' : 'bg-gray-50 text-gray-900'}`}>
@@ -155,48 +314,26 @@ export default function App() {
         canUndo={canUndo} 
         canRedo={canRedo} 
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={(tab) => setActiveTab(tab as AppTab)}
         isDarkMode={isDarkMode}
         setIsDarkMode={setIsDarkMode}
+        autosaveStatus={autosaveStatus}
       />
       
       {/* Main Content Area: Sidebar - Canvas - Sidebar */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden overflow-y-auto md:overflow-y-hidden">
-        {activeTab === 'Layout' ? (
-          <>
-            {/* Left Sidebar: Controls for template, paper, and layout settings */}
-            <LeftSidebar 
-              config={config} 
-              setConfig={setConfig} 
-              template={template} 
-              allTemplates={allTemplates}
-              setCustomTemplates={setCustomTemplates}
-            />
-            
-            {/* Main Canvas: Visual representation of the calculated layout */}
-            <div className="flex-1 min-h-[500px] md:min-h-0 flex flex-col">
-              <MainCanvas config={config} layoutResult={layoutResult} template={template} paper={paper} />
-            </div>
-            
-            {/* Right Sidebar: Statistics, optimization details, and export actions */}
-            <RightSidebar config={config} setConfig={setConfig} layoutResult={layoutResult} />
-          </>
-        ) : activeTab === 'Project' ? (
-          <ProjectView config={config} setConfig={setConfig} />
-        ) : activeTab === 'Template' ? (
-          <TemplateView 
-            customTemplates={customTemplates} 
-            setCustomTemplates={setCustomTemplates} 
-            config={config} 
-            setConfig={setConfig} 
-          />
-        ) : activeTab === 'Design' ? (
-          <DesignView config={config} setConfig={setConfig} />
-        ) : activeTab === 'Preview' ? (
-          <PreviewView config={config} layoutResult={layoutResult} template={template} paper={paper} />
-        ) : activeTab === 'Export' ? (
-          <ExportView config={config} setConfig={setConfig} layoutResult={layoutResult} template={template} paper={paper} />
-        ) : null}
+        {renderTabContent()}
+      </div>
+
+      <div id="print-root" aria-hidden="true">
+        <MainCanvas
+          config={config}
+          layoutResult={layoutResult}
+          template={template}
+          paper={paper}
+          isExportMode={true}
+          canvasId="print-canvas"
+        />
       </div>
     </div>
   );

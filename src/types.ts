@@ -1,10 +1,10 @@
 /**
  * ============================================================================
  * FILE: src/types.ts
- * DESCRIPTION: Core TypeScript definitions and interfaces for the application.
- *              Provides strict typing for layout configurations, paper sizes,
- *              and calculation results to ensure robust code quality.
- * AUTHOR: AI Studio
+ * DESCRIPTION: Shared domain contracts for the print layout application.
+ *              These types describe user configuration, template geometry,
+ *              layout engine output, and portable project-file structure.
+ * AUTHOR: Codex
  * SCORE: 100+ (Clarity, Quality, Maintainability)
  * ============================================================================
  */
@@ -25,7 +25,7 @@ export type PaperSize = {
  * - tight: Minimal margins to maximize space.
  * - borderless: Zero margins (requires borderless printing support).
  */
-export type PrinterMode = 'safe' | 'tight' | 'borderless';
+export type PrinterMode = 'safe' | 'tight' | 'borderless' | 'custom';
 
 /**
  * Defines the orientation of the paper.
@@ -42,9 +42,10 @@ export type Orientation = 'portrait' | 'landscape' | 'auto';
  * - none: No crop marks.
  */
 export type CropMarksStyle = 'standard' | 'corners' | 'none';
+export type ArtworkFitMode = 'cover' | 'contain';
 
 /**
- * Represents a product template (e.g., a specific sticker or card size).
+ * Represents a finished product size that can be repeated across a sheet.
  */
 export type ProductTemplate = {
   id: string;         // Unique identifier for the template
@@ -56,7 +57,27 @@ export type ProductTemplate = {
 };
 
 /**
- * Holds all user-configurable settings for the layout engine.
+ * Controls how uploaded artwork is placed inside a product template.
+ * Values are persisted per template so a user can tune one product without
+ * disturbing the framing used by a different size or shape.
+ */
+export type ArtworkPlacement = {
+  fitMode: ArtworkFitMode; // Whether the artwork should cover or fully fit inside the cut area
+  scale: number;           // Additional scaling multiplier applied after fitting
+  offsetX: number;         // Horizontal shift in percent relative to the artwork frame
+  offsetY: number;         // Vertical shift in percent relative to the artwork frame
+  rotation: number;        // Rotation in degrees
+};
+
+export type PrintMargins = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
+
+/**
+ * Holds the full set of layout decisions a user can change in the UI.
  */
 export type LayoutConfig = {
   templateId: string;             // Selected product template ID
@@ -72,10 +93,24 @@ export type LayoutConfig = {
   pageLabels: boolean;            // Whether to add page/item labels
   centerMarks: boolean;           // Whether to add center alignment marks
   uploadedImage: string | null;   // DataURL of the uploaded design
+  artworkPlacements: Record<string, ArtworkPlacement>; // Per-template artwork placement overrides
+  customMargins: PrintMargins;    // User-calibrated printer margins in inches
 };
 
 /**
- * Contains the calculated results from the layout engine.
+ * Represents a portable project document that can be saved to disk or shared.
+ * The version field gives the app a clear migration point for future schema
+ * changes without relying on implicit shape detection.
+ */
+export type ProjectFile = {
+  version: 1;
+  name: string;
+  config: LayoutConfig;
+  customTemplates: ProductTemplate[];
+};
+
+/**
+ * Contains the computed geometry and summary metrics for a sheet layout.
  */
 export type LayoutResult = {
   cols: number;               // Number of columns that fit

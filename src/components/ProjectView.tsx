@@ -9,19 +9,63 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LayoutConfig } from '../types';
-import { Save, FolderOpen, Trash2 } from 'lucide-react';
+import { LayoutConfig, ProductTemplate, ProjectFile } from '../types';
+import { normalizeLayoutConfig } from '../lib/layoutConfig';
+import { Save, FolderOpen, Trash2, Upload, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { set, get, del, keys } from 'idb-keyval';
 
 interface ProjectViewProps {
   config: LayoutConfig;
   setConfig: React.Dispatch<React.SetStateAction<LayoutConfig>>;
+  customTemplates: ProductTemplate[];
+  setCustomTemplates: React.Dispatch<React.SetStateAction<ProductTemplate[]>>;
 }
 
-export default function ProjectView({ config, setConfig }: ProjectViewProps) {
+const PROJECT_FILE_VERSION = 1;
+
+function isProjectFile(value: unknown): value is ProjectFile {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const project = value as Partial<ProjectFile>;
+
+  return (
+    project.version === PROJECT_FILE_VERSION &&
+    typeof project.name === 'string' &&
+    Array.isArray(project.customTemplates) &&
+    Boolean(project.config) &&
+    typeof project.config === 'object'
+  );
+}
+
+export default function ProjectView({ config, setConfig, customTemplates, setCustomTemplates }: ProjectViewProps) {
   const [projectName, setProjectName] = useState('Untitled Project');
   const [savedProjects, setSavedProjects] = useState<string[]>([]);
+
+  const buildProjectFile = (): ProjectFile => ({
+    version: PROJECT_FILE_VERSION,
+    name: projectName.trim() || 'Untitled Project',
+    config,
+    customTemplates,
+  });
+
+  const applyProjectFile = (projectFile: ProjectFile) => {
+    setConfig(normalizeLayoutConfig(projectFile.config));
+    setCustomTemplates(projectFile.customTemplates);
+    setProjectName(projectFile.name);
+  };
+
+  const downloadProjectFile = (projectFile: ProjectFile) => {
+    const blob = new Blob([JSON.stringify(projectFile, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${projectFile.name || 'print-project'}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     const loadProjects = async () => {
@@ -44,7 +88,7 @@ export default function ProjectView({ config, setConfig }: ProjectViewProps) {
       return;
     }
     try {
-      await set(`project_${projectName}`, config);
+      await set(`project_${projectName}`, buildProjectFile());
       if (!savedProjects.includes(projectName)) {
         setSavedProjects([...savedProjects, projectName]);
       }
@@ -57,9 +101,18 @@ export default function ProjectView({ config, setConfig }: ProjectViewProps) {
 
   const handleLoad = async (name: string) => {
     try {
-      const savedConfig = await get(`project_${name}`);
-      if (savedConfig) {
-        setConfig(savedConfig as LayoutConfig);
+      const savedProject = await get(`project_${name}`);
+      if (savedProject) {
+        if (isProjectFile(savedProject)) {
+          applyProjectFile(savedProject);
+        } else {
+          applyProjectFile({
+            version: PROJECT_FILE_VERSION,
+            name,
+            config: normalizeLayoutConfig(savedProject as LayoutConfig),
+            customTemplates,
+          });
+        }
         setProjectName(name);
         toast.success(`Project "${name}" loaded successfully`);
       } else {
@@ -79,6 +132,52 @@ export default function ProjectView({ config, setConfig }: ProjectViewProps) {
     } catch (error) {
       console.error('Delete error:', error);
       toast.error(`Failed to delete project "${name}"`);
+    }
+  };
+
+  const handleExportFile = async () => {
+    const projectFile = buildProjectFile();
+
+    try {
+      if (window.electronAPI) {
+        const result = await window.electronAPI.saveProjectFile(projectFile);
+        if (result.canceled) {
+          return;
+        }
+        toast.success(`Project file exported to ${result.filePath}`);
+        return;
+      }
+
+      downloadProjectFile(projectFile);
+      toast.success('Project file downloaded');
+    } catch (error) {
+      console.error('Project export error:', error);
+      toast.error('Failed to export project file');
+    }
+  };
+
+  const handleImportFile = async () => {
+    try {
+      if (!window.electronAPI) {
+        toast.info('Project file import is available in the Electron app.');
+        return;
+      }
+
+      const result = await window.electronAPI.openProjectFile();
+      if (result.canceled || !result.contents) {
+        return;
+      }
+
+      const parsed = JSON.parse(result.contents);
+      if (!isProjectFile(parsed)) {
+        throw new Error('Invalid project file');
+      }
+
+      applyProjectFile(parsed);
+      toast.success(`Imported ${parsed.name}`);
+    } catch (error) {
+      console.error('Project import error:', error);
+      toast.error('Failed to import project file');
     }
   };
 
@@ -104,6 +203,21 @@ export default function ProjectView({ config, setConfig }: ProjectViewProps) {
               <Save className="w-4 h-4" /> Save Project
             </button>
           </div>
+        </div>
+
+        <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            onClick={handleExportFile}
+            className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-3 rounded-lg font-medium transition-colors border border-gray-700"
+          >
+            <Download className="w-4 h-4" /> Export Project File
+          </button>
+          <button
+            onClick={handleImportFile}
+            className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-3 rounded-lg font-medium transition-colors border border-gray-700"
+          >
+            <Upload className="w-4 h-4" /> Import Project File
+          </button>
         </div>
 
         <div>
