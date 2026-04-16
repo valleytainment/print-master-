@@ -11,6 +11,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutConfig, LayoutResult, ProductTemplate, PaperSize } from '../types';
 import { Printer, Eye, Ruler, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import MainCanvas from './MainCanvas';
+import { getArtworkPlacement } from '../lib/layoutConfig';
 
 interface PreviewViewProps {
   config: LayoutConfig;
@@ -28,6 +29,7 @@ export default function PreviewView({ config, layoutResult, template, paper }: P
   const containerRef = useRef<HTMLDivElement>(null);
   const [previewScale, setPreviewScale] = useState(1);
   const [imageMetadata, setImageMetadata] = useState<ImageMetadata | null>(null);
+  const artworkPlacement = getArtworkPlacement(config, template.id);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -129,7 +131,7 @@ export default function PreviewView({ config, layoutResult, template, paper }: P
       const effectiveDpi = Math.min(
         imageMetadata.width / layoutResult.itemWidth,
         imageMetadata.height / layoutResult.itemHeight
-      );
+      ) / artworkPlacement.scale;
 
       if (effectiveDpi >= 300) {
         checks.push({
@@ -178,7 +180,7 @@ export default function PreviewView({ config, layoutResult, template, paper }: P
     });
 
     return checks;
-  }, [config.printerMode, config.uploadedImage, imageMetadata, layoutResult.itemHeight, layoutResult.itemWidth, layoutResult.itemsPerSheet, paper.name]);
+  }, [artworkPlacement.scale, config.printerMode, config.uploadedImage, imageMetadata, layoutResult.itemHeight, layoutResult.itemWidth, layoutResult.itemsPerSheet, paper.name]);
 
   const criticalIssues = preflightChecks.filter((check) => check.status === 'critical');
   const warningIssues = preflightChecks.filter((check) => check.status === 'warning');

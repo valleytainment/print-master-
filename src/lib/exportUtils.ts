@@ -60,8 +60,8 @@ async function renderSnapshotCanvas({ scale }: SnapshotOptions): Promise<HTMLCan
  * than a vector or CMYK print workflow.
  */
 export async function exportLayoutAsPdf(layoutResult: LayoutResult): Promise<void> {
-  const canvas = await renderSnapshotCanvas({ scale: 4 });
-  const imageData = canvas.toDataURL('image/jpeg', 1.0);
+  const canvas = await renderSnapshotCanvas({ scale: 6 });
+  const imageData = canvas.toDataURL('image/png');
 
   const pdf = new jsPDF({
     orientation: layoutResult.paperWidth > layoutResult.paperHeight ? 'landscape' : 'portrait',
@@ -69,7 +69,7 @@ export async function exportLayoutAsPdf(layoutResult: LayoutResult): Promise<voi
     format: [layoutResult.paperWidth, layoutResult.paperHeight],
   });
 
-  pdf.addImage(imageData, 'JPEG', 0, 0, layoutResult.paperWidth, layoutResult.paperHeight);
+  pdf.addImage(imageData, 'PNG', 0, 0, layoutResult.paperWidth, layoutResult.paperHeight);
   pdf.save('layout-snapshot.pdf');
 }
 
@@ -77,7 +77,7 @@ export async function exportLayoutAsPdf(layoutResult: LayoutResult): Promise<voi
  * Exports the current layout as a PNG snapshot for sharing and quick proofing.
  */
 export async function exportLayoutAsPng(): Promise<void> {
-  const canvas = await renderSnapshotCanvas({ scale: 2 });
+  const canvas = await renderSnapshotCanvas({ scale: 4 });
   const link = document.createElement('a');
   link.download = 'layout-preview.png';
   link.href = canvas.toDataURL('image/png');

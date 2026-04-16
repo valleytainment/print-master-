@@ -34,8 +34,18 @@ export default function DesignView({ config, setConfig, template }: DesignViewPr
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string;
-      setConfig(prev => ({ ...prev, uploadedImage: dataUrl }));
-      toast.success('Design uploaded successfully');
+      setConfig((prev) => ({
+        ...prev,
+        uploadedImage: dataUrl,
+        artworkPlacements: {
+          ...prev.artworkPlacements,
+          [template.id]: {
+            ...DEFAULT_ARTWORK_PLACEMENT,
+            fitMode: 'contain',
+          },
+        },
+      }));
+      toast.success('Design uploaded with full artwork fit');
     };
     reader.onerror = () => {
       toast.error('Failed to read file');

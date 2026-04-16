@@ -13,7 +13,7 @@ import React, { useRef, useState } from 'react';
 import { LayoutConfig, ProductTemplate } from '../types';
 import { PAPER_SIZES } from '../lib/layoutEngine';
 import { ChevronDown, Plus, Replace, Trash2, Wand2, RotateCcw, CheckCircle2, Upload } from 'lucide-react';
-import { DEFAULT_CUSTOM_MARGINS } from '../lib/layoutConfig';
+import { DEFAULT_ARTWORK_PLACEMENT, DEFAULT_CUSTOM_MARGINS } from '../lib/layoutConfig';
 import { toast } from 'sonner';
 
 /**
@@ -49,8 +49,18 @@ export default function LeftSidebar({ config, setConfig, template, allTemplates,
       const reader = new FileReader();
       reader.onload = (e) => {
         const dataUrl = e.target?.result as string;
-        setConfig(prev => ({ ...prev, uploadedImage: dataUrl }));
-        toast.success('Design uploaded successfully');
+        setConfig(prev => ({
+          ...prev,
+          uploadedImage: dataUrl,
+          artworkPlacements: {
+            ...prev.artworkPlacements,
+            [template.id]: {
+              ...DEFAULT_ARTWORK_PLACEMENT,
+              fitMode: 'contain',
+            },
+          },
+        }));
+        toast.success('Design uploaded with full artwork fit');
       };
       reader.onerror = () => {
         toast.error('Failed to read file');
